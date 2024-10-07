@@ -1,3 +1,5 @@
+import firebase from '@react-native-firebase/app';
+import storage from '@react-native-firebase/storage';
 import React from 'react'
 import { NavigationContainer } from '@react-navigation/native'
 import Login from './src/screens/Login';

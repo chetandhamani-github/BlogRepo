@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, ImageBackground } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, Button, Image } from 'react-native';
 import { showToast } from '../utils/Toast';
+import {launchImageLibrary} from 'react-native-image-picker';
+import storage from '@react-native-firebase/storage';
 
 const generateRandomId = () => {
   return Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
@@ -10,21 +12,90 @@ const BlogApp = () => {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [blogs, setBlogs] = useState([]);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [transferred, setTransferred] = useState(0);
 
-  const handleAddBlog = () => {
+  const openImagePicker = () => {
+    const options = {
+      mediaType: 'photo',
+      includeBase64: false,
+      maxHeight: 2000,
+      maxWidth: 2000,
+    };
+
+    launchImageLibrary(options, (response) => {
+      if (response.didCancel) {
+        console.log('User cancelled image picker');
+      } else if (response.error) {
+        console.log('Image picker error: ', response.error);
+      } else {
+        let imageUri = response.assets?.[0]?.uri;
+        setSelectedImage(imageUri);
+      }
+    });
+  };
+
+  const uploadImage = async () => {
+    if (selectedImage == null) {
+      return null;
+    }
+
+    const uploadUri = selectedImage;
+    let fileName = uploadUri.substring(uploadUri.lastIndexOf('/') + 1);
+
+    const extension = fileName.split('.').pop();
+    const name = fileName.split('.').slice(0, -1).join('.');
+    fileName = name + Date.now() + '.' + extension;
+
+    setUploading(true);
+    setTransferred(0);
+
+    const storageRef = storage().ref(`photos/${fileName}`);
+    const task = storageRef.putFile(uploadUri);
+
+    task.on('state_changed', (snapshot) => {
+      setTransferred(
+        Math.round(snapshot.bytesTransferred / snapshot.totalBytes) * 100
+      );
+    });
+
+    try {
+      await task;
+      const url = await storageRef.getDownloadURL();
+      setUploading(false);
+      return url;
+    } catch (e) {
+      console.error(e);
+      return null;
+    }
+  };
+
+  const handleAddBlog = async () => {
     if (title && content) {
-      const newBlog = { title, content, id: generateRandomId() };
+      const imageUrl = await uploadImage();
+
+      const newBlog = {
+        title,
+        content,
+        id: generateRandomId(),
+        imageUrl
+      };
+
       setBlogs([...blogs, newBlog]);
       setTitle('');
       setContent('');
+      setSelectedImage(null);
     } else {
-      showToast('Title and content both are required')
+      showToast('Title and content both are required');
     }
   };
-  
 
   const BlogCard = ({ item }) => (
     <View style={styles.cardContainer}>
+      {item.imageUrl && (
+        <Image source={{ uri: item.imageUrl }} style={styles.cardImage} />
+      )}
       <View style={{ width: '90%', height: '90%' }}>
         <Text style={styles.cardTitle}>{item.title}</Text>
         <Text style={styles.cardContent}>{item.content}</Text>
@@ -50,8 +121,17 @@ const BlogApp = () => {
         multiline
       />
 
+      <Button title="Choose Image from Device" onPress={openImagePicker} />
+      <View style = {{height: '5%'}}></View>
+
+      {selectedImage && (
+        <Image source={{ uri: selectedImage }} style={styles.previewImage} />
+      )}
+
       <TouchableOpacity style={styles.button} onPress={handleAddBlog}>
-        <Text style={styles.buttonText}>Submit Blog</Text>
+        <Text style={styles.buttonText}>
+          {uploading ? `Uploading ${transferred}%` : 'Submit Blog'}
+        </Text>
       </TouchableOpacity>
 
       <FlatList
@@ -104,27 +184,38 @@ const styles = StyleSheet.create({
     backgroundColor: '#EDE8DC',
     borderRadius: 15,
     overflow: 'hidden',
-    elevation: 3, // Shadow effect (Android)
-    shadowColor: '#000', // Shadow effect (iOS)
+    elevation: 3,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     marginBottom: 20,
-    width: '100%', // Adjust card width as per need
+    width: '100%', 
     justifyContent: 'center',
     alignItems: 'center',
-    height: 350
+    height: 350,
   },
-  
-  cardTitle:{
+  cardImage: {
+    width: '100%',
+    height: 300,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  cardTitle: {
     fontSize: 30,
     fontWeight: 'bold',
     color: 'black',
-    marginBottom: 10
+    marginBottom: 10,
   },
-  cardContent:{
+  cardContent: {
     fontSize: 18,
     fontWeight: '300',
+  },
+  previewImage: {
+    width: '100%',
+    height: 200,
+    borderRadius: 8,
+    marginBottom: 10,
   },
 });
 
